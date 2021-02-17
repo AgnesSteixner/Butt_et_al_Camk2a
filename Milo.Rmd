@@ -1,0 +1,87 @@
+---
+title: "Butt et al: Abundance analysis in MiloR"
+author: "Agnes A. Steixner-Kumar"
+date: "15 02 2021"
+output: 
+  pdf_document:
+    latex_engine: xelatex 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 13
+    keep_tex: no
+    number_sections: yes
+    toc: yes
+  html_notebook: 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 13
+    number_sections: yes
+    toc: yes
+    df_print: paged
+  html_document: 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 13
+    number_sections: yes
+    toc: yes
+    toc_float: true
+editor_options: 
+  chunk_output_type: inline
+---
+```{r load_libraries}
+library(Seurat)
+library(miloR)
+library(scater)
+library(patchwork)
+```
+
+# Load and subset data
+
+First, we load the scRNAseq data generated in Butt et al (2020) available on GEO (GSE162079). Next, we select only the population of interest, i.e. glutamateric cells.
+```{r load_data, paged.print=TRUE}
+odd<-readRDS("GSE162079_Butt_et_al_hypoxia_Seurat.RDS") #load Seurat object
+cam<-subset(odd, final_identity %in% c(grep("Glut", unique(odd$final_identity), value = T), "Mossy_cells")) #select glutamatergic neurons = Camk2a+ neurons
+```
+
+# Run MiloR
+
+This chunk is designed to build the KNN neighbourhood graph, calculate distances and test for abundance shifts between normoxia and hypoxia.
+
+```{r run_milo, paged.print=TRUE}
+sce<-as.SingleCellExperiment(cam) #convert to single cell experiment format
+cam.meta<-cam@meta.data #fill up meta data
+cam.milo<-Milo(sce) #create milo object
+
+cam.milo<-buildGraph(cam.milo, k=30, d=30) #build graph
+cam.milo<-makeNhoods(cam.milo, k=30, d=30, refined=T, prop=0.2) #construct neighbourhoods
+
+cam.milo<-calcNhoodDistance(cam.milo, d=30) #calculate neighbourhood distances
+cam.milo<-countCells(cam.milo, samples="Sample", meta.data=cam.meta) #count cells per sample
+
+cam.design<-as.data.frame(xtabs(~group + Sample, data=cam.meta)) # 
+cam.design<-cam.design[cam.design$Freq>0,]
+
+res<- testNhoods(cam.milo, design = ~group, design.df = cam.design) # test for abundance changes within neighbourhoods
+head(res)
+
+plotNhoodSizeHist(cam.milo) # plot neighbourhood size
+
+cam.milo<-buildNhoodGraph(cam.milo)
+
+```
+
+# Figure 6d
+```{r figure_6d, paged.print=TRUE}
+plotUMAP(cam.milo)+
+  plotNhoodGraphDA(cam.milo, res, alpha = 0.05)+
+  plot_layout(guides = "collect")
+```
+
+# Figure 6e
+```{r figure_6e, paged.print=TRUE}
+plotDAbeeswarm(res, group.by = "final_identity") #make bee swarm plot
+```
+
+
+
+
