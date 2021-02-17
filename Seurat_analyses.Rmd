@@ -1,0 +1,236 @@
+---
+title: "Butt et al: scRNAseq analysis of Camk2a-neurons"
+author: "Agnes A. Steixner-Kumar"
+date: "17 02 2020"
+output: 
+  pdf_document:
+    latex_engine: xelatex 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 13
+    keep_tex: no
+    number_sections: yes
+    toc: yes
+  html_notebook: 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 13
+    number_sections: yes
+    toc: yes
+    df_print: paged
+  html_document: 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 13
+    number_sections: yes
+    toc: yes
+    toc_float: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r load_libraries}
+library(Seurat)
+library(ComplexHeatmap)
+library(dplyr)
+library(circlize)
+library(scales)
+library(VennDiagram)
+library(ggplot2)
+```
+
+# Load and subset data
+
+First, we load the scRNAseq data generated in Butt et al (2020) available on GEO (GSE162079). Next, we select only the population of interest, i.e. glutamateric cells.
+
+```{r load_data, paged.print=TRUE}
+odd<-readRDS("GSE162079_Butt_et_al_hypoxia_Seurat.RDS") #load Seurat object
+cam<-subset(odd, idents = c(grep("Glut", levels(odd), value = T),"Mossy_cells")) #select glutamatergic neurons = Camk2a+ neurons
+```
+
+# Rename clusters
+```{r rename_clusters}
+cam<-RenameIdents(cam, "Glutamatergic2"="CA3", "Glutamatergic1"="CA1", "Glutamatergic0"="DG", "Glutamatergic3"="Glut3", "Glutamatergic4"="Glut4", "Mossy_cells"="Mossy") #rename identities
+cam$final_identity<-Idents(cam) # set identities with new names
+levels(cam)<-c("CA1", "CA3", "DG", "Glut3", "Glut4", "Mossy") # order levels
+```
+
+# Shift embeddings
+
+This is not important for the actual analysis and can be skipped. It was just done for more "compact" visualization on the UMAP: Cells very far down on UMAP_2 were shifted upwards
+```{r}
+emb<-Embeddings(cam, reduction = "umap")
+#shift selected cells upwards on UMAP2
+emb[,2][emb[,2]<(-15)]<-emb[,2][emb[,2]<(-15)]+12
+#feed changed embeddings back into object
+cam@reductions$umap@cell.embeddings<-emb
+```
+
+# Visualize hippocampal region markers (not shown in publication)
+
+```{r plot_region_markers}
+FeaturePlot(cam, c("Mpped1", "Prox1", "Mndal"), reduction = "umap", order = T, combine = F) # Mpped1:CA1, Prox1: DG, Mndal: CA3
+```
+
+# Figure 6a
+
+```{r Figure6a}
+VlnPlot(cam, "Camk2a", split.by = "group", pt.size = 0, cols = c("purple4", "pink"), split.plot = T)
+```
+
+# Camk2a regional expression
+
+Here, Camk2a expression under normoxic levels was compared between regions to understand if differences in tdTomato labelling might be driven by differences in baseline Camk2a-levels.
+```{r Camk2a_regional_expr}
+cam_nor<-subset(cam, group=="Normoxia") #subset only normoxic group
+
+FindMarkers(cam_nor, ident.1 = "CA1", ident.2 = "CA3", features = "Camk2a", logfc.threshold = 0.1)
+FindMarkers(cam_nor, ident.1 = "CA1", ident.2 = "DG", features = "Camk2a", logfc.threshold = 0.1)
+FindMarkers(cam_nor, ident.1 = "CA3", ident.2 = "DG", features = "Camk2a", logfc.threshold = 0.1) #non-significant/too low log-FC
+```
+# Camk2a hypoxia-differential expression per region
+
+Find out if upregulation of Camk2a under hypoxia is similar across hippocampal regions or if it follows a pattern that could explain tdTomato labelling differences.
+```{r Camk2a_hypoxia_DE}
+lapply(levels(cam), function(x) FindMarkers(cam, subset.ident = x, ident.1 = "Hypoxia", group.by = "group", logfc.threshold = 0.1, features = "Camk2a"))
+```
+
+# General differential expression under hypoxia
+
+Find genes that are regulated under hypoxia.
+```{r general_DE}
+DE<-FindMarkers(cam, group.by = "group", ident.1 = "Hypoxia", logfc.threshold = 0.25) # calculate DE
+DE$gene<-rownames(DE) # set column with gene name
+DE<-subset(DE, p_val_adj<0.05) # keep only DE that survive multiple testing correction
+```
+
+# Figure 6b
+
+Create heatmap of top hypoxia regulated genes.
+```{r heatmap}
+cam<-ScaleData(cam, features = rownames(cam)) # scale data for comparability
+anno<-cbind.data.frame(as.character(cam$final_identity), as.character(cam$group), as.numeric(as.character(cam$nCount_RNA)), colnames(cam), stringsAsFactors=F) # create annotation frame for heatmap
+row.names(anno)<-colnames(cam)
+colnames(anno)<-c('final_identity', 'group', 'Expression', 'IDs')
+
+mat<-as.matrix(GetAssayData(cam, slot = "scale.data", assay = "RNA")) # extract scaled expression matrix
+goi<-rbind(DE %>% arrange(avg_logFC) %>% top_n(-20, avg_logFC), DE %>% arrange(avg_logFC) %>% top_n(20, avg_logFC)) # define genes of interest as top 20 upregulated and top 20 downregulated genes
+mat_goi<-mat[rownames(mat) %in% goi$gene,] # subset matrix by genes of interest
+
+#order cells for heatmap
+orderedCells<-anno %>% filter(rownames(anno) %in% colnames(mat_goi))%>% group_by(group) %>% arrange((group), match(final_identity, as.character(levels(Idents(cam)))))%>% pull(IDs) # define cell order for heatmap
+
+anno<-anno %>% filter(rownames(anno) %in% colnames(mat_goi))
+
+cols<-list(Group=c('Hypoxia'='purple','Normoxia'='pink'),
+           Cluster=c('DG'='#F8766D','CA1'='#D89000','CA3'='#A3A500',"Glut3"="#39B600",
+                     "Glut4"="#00BF7D", "Mossy"="#00BFC4"),
+           nUMI=colorRamp2(c(0, 40000), c("grey", "black"))) #define colors
+
+
+col_anno<-columnAnnotation(Group=anno$group, nUMI=anno$Expression, Cluster=anno$final_identity,
+                            col = cols, annotation_legend_param = list(
+                              Group=list(direction='vertical'),
+                              Cluster=list(direction='vertical'),
+                              nUMI=list(direction='vertical'))
+                              ) # give column annotation settings
+
+set.seed(123) # seed for reproducibility
+# create heatmap and save
+h<-Heatmap(mat_goi
+          , name = 'Expression',  col = c('white', 'blue2', 'black'), column_order = orderedCells, show_column_names = F, row_km = 5, row_km_repeats = 5,column_km = 3, column_km_repeats = 5, top_annotation = col_anno,  heatmap_width = unit(6, "cm"), heatmap_height = unit(15, "cm"),heatmap_legend_param = list(direction = "horizontal"),row_names_gp = gpar(fontsize = 10))
+ draw(h, annotation_legend_side='left', heatmap_legend_side = "bottom")
+```
+
+# Hypoxia-differential expression by cluster
+
+```{r hypoxia_cluster_DE}
+DE_per_cluster<-lapply(levels(cam), function(x) FindMarkers(cam, subset.ident = x,ident.1 = "Hypoxia", group.by = "group", logfc.threshold = 0.25, max.cells.per.ident = 2296, random.seed = 123)) # calculate hypoxia DE per cluster on fixed cluster size, i.e. cluster size set equal to CA3 cluster size
+names(DE_per_cluster)<-levels(cam) # name list
+
+DE_per_cluster<-lapply(DE_per_cluster, function(x) x[x$p_val_adj<0.05,]) # select only DE that survive multiple testing correction
+DE_per_cluster<-DE_per_cluster[1:3] # keep only the DE of the large regional clusters
+```
+
+# Figure 6c
+## left panel
+Create Venn diagram.
+```{r Venn_diag_prep}
+DE_per_cluster_names<-lapply(DE_per_cluster, function(x) rownames(x)) # create list with only DE gene names per cluster
+common_DE<-Reduce(x = DE_per_cluster_names, f = intersect) # calculate overlap of DE between regions
+
+#change names for venn diagram
+names(DE_per_cluster_names)<-c("DG","CA1", "CA3") # name the clusters
+my_color_palette <- hue_pal()(length(levels(odd)))[c(1,2,4)] # select colors matching UMAP representation
+```
+
+```{r Venn_diagram, echo=TRUE, eval=FALSE}
+# create Venn diagram
+venn.diagram(x = DE_per_cluster_names, fill=my_color_palette, col=my_color_palette, margin=0.1, 
+             cat.default.pos="text", cat.just=list(c(-0.1,-0.7), c(1,-0.7), c(0.5,1.7)), 
+             cat.fontface="bold", cat.fontfamily="Arial", cex=1.8, cat.cex=1.6,
+             filename = 'Venn_3_regions_hypoxia_DE.tiff', height = 10, width = 10, units = 'cm')
+```
+
+## right panel
+
+Calculate percentage of hypoxia-upregulated genes per cluster
+```{r percent_upreg}
+# Perform DE calculation without downsampling of clusters
+DE_per_cluster_nosamp<-lapply(levels(cam), function(x) FindMarkers(cam, subset.ident = x,ident.1 = "Hypoxia", group.by = "group",logfc.threshold = 0.25))
+
+names(DE_per_cluster_nosamp)<-levels(cam) # name list
+DE_per_cluster_nosamp<-lapply(DE_per_cluster_nosamp, function(x) x[x$p_val_adj<0.05,]) # select genes that survive multiple testing correction
+DE_per_cluster_nosamp<-lapply(DE_per_cluster_nosamp, function(x) {
+        x$UP_DOWN[x$avg_logFC>0]<-"UP" # define genes as UP or down
+        x$UP_DOWN[x$avg_logFC<0]<-"DOWN"
+        x
+})
+
+n_DE_UP<-lapply(DE_per_cluster_nosamp, function(x) sum(x$UP_DOWN=="UP")/nrow(x)) # calculate proportion of upregulated genes per cluster
+n_DE_UP<-round(bind_rows(n_DE_UP),4)*100 # convert to percentage
+
+# fill in informatin into Seurat object
+cam$UP_perc<-NA
+for (i in levels(cam)){
+  cam$UP_perc[cam$final_identity==i]<-n_DE_UP[,i]
+}
+```
+
+Create FeaturePlot of percentage of upregulated genes
+```{r plot_percent_upreg}
+FeaturePlot(cam, features = "UP_perc", reduction = "umap", cols = c("green3", "steelblue4"))+
+  theme(axis.text = element_text(size = 20))+
+    theme(axis.title = element_text(size = 22))+
+    theme(legend.text = element_text(size=20))+
+    theme(plot.title = element_blank())+
+    labs(color="Percentage\nupregulated")+
+    theme(legend.title = element_text(size = 20))+
+    theme(legend.key.size = unit(0.8, "cm"))
+```
+
+Calculate markers of cluster Glut4
+```{r glut4_markers}
+glut4_markers<-FindMarkers(cam, ident.1 = "Glut4", logfc.threshold = 0.5)
+glut4_markers %>% arrange(avg_logFC) %>% top_n(20, avg_logFC)
+```
+
+# Figures 6d-e
+
+Performed using MiloR package. See script Milo.Rmd.
+
+# Figure 6f
+Create FeaturePlots of immature neuron markers
+```{r Ftplt_immat_markers}
+lapply(c("Tbr1", "Dcx", "Tle4", "Zbtb20", "Camk2a"), function(x){
+  FeaturePlot(cam, features = x, reduction = "umap", order = T)+
+    theme(axis.text = element_text(size = 16))+
+    theme(axis.title = element_text(size = 18))+
+    theme(legend.text = element_text(size=16))+
+    theme(plot.title = element_text(size=18))
+#  ggsave(paste0("Ftplt_", x, ".jpg"), width = 10, height = 10, units = "cm", dpi = 600) #uncomment to save graphs
+  })
+```
+
+
+
