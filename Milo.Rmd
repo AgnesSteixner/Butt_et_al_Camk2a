@@ -3,6 +3,20 @@ title: "Butt et al: Abundance analysis in MiloR"
 author: "Agnes A. Steixner-Kumar"
 date: "15 02 2021"
 output: 
+  html_document: 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 13
+    number_sections: yes
+    toc: yes
+    toc_float: true
+  html_notebook: 
+    fig_caption: yes
+    fig_height: 8
+    fig_width: 13
+    number_sections: yes
+    toc: yes
+    df_print: paged
   pdf_document:
     latex_engine: xelatex 
     fig_caption: yes
@@ -11,24 +25,10 @@ output:
     keep_tex: no
     number_sections: yes
     toc: yes
-  html_notebook: 
-    fig_caption: yes
-    fig_height: 8
-    fig_width: 13
-    number_sections: yes
-    toc: yes
-    df_print: paged
-  html_document: 
-    fig_caption: yes
-    fig_height: 8
-    fig_width: 13
-    number_sections: yes
-    toc: yes
-    toc_float: true
 editor_options: 
   chunk_output_type: inline
 ---
-```{r load_libraries}
+```{r load_libraries, warning=FALSE}
 library(Seurat)
 library(miloR)
 library(scater)
@@ -71,7 +71,7 @@ cam.milo<-buildNhoodGraph(cam.milo)
 ```
 
 # Figure 6d
-```{r figure_6d, paged.print=TRUE}
+```{r figure_6d, paged.print=TRUE, warning=FALSE}
 plotUMAP(cam.milo)+
   plotNhoodGraphDA(cam.milo, res, alpha = 0.05)+
   plot_layout(guides = "collect")
