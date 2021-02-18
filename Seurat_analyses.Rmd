@@ -29,7 +29,7 @@ editor_options:
   chunk_output_type: inline
 ---
 
-```{r load_libraries}
+```{r load_libraries, message=FALSE, warning=FALSE, results='hide'}
 library(Seurat)
 library(ComplexHeatmap)
 library(dplyr)
@@ -98,7 +98,7 @@ lapply(levels(cam), function(x) FindMarkers(cam, subset.ident = x, ident.1 = "Hy
 # General differential expression under hypoxia
 
 Find genes that are regulated under hypoxia.
-```{r general_DE}
+```{r general_DE, results='hide'}
 DE<-FindMarkers(cam, group.by = "group", ident.1 = "Hypoxia", logfc.threshold = 0.25) # calculate DE
 DE$gene<-rownames(DE) # set column with gene name
 DE<-subset(DE, p_val_adj<0.05) # keep only DE that survive multiple testing correction
@@ -107,7 +107,7 @@ DE<-subset(DE, p_val_adj<0.05) # keep only DE that survive multiple testing corr
 # Figure 6b
 
 Create heatmap of top hypoxia regulated genes.
-```{r heatmap}
+```{r heatmap, fig.height = 10, fig.width = 8, fig.align = "center"}
 cam<-ScaleData(cam, features = rownames(cam)) # scale data for comparability
 anno<-cbind.data.frame(as.character(cam$final_identity), as.character(cam$group), as.numeric(as.character(cam$nCount_RNA)), colnames(cam), stringsAsFactors=F) # create annotation frame for heatmap
 row.names(anno)<-colnames(cam)
@@ -144,7 +144,7 @@ h<-Heatmap(mat_goi
 
 # Hypoxia-differential expression by cluster
 
-```{r hypoxia_cluster_DE}
+```{r hypoxia_cluster_DE, results='hide'}
 DE_per_cluster<-lapply(levels(cam), function(x) FindMarkers(cam, subset.ident = x,ident.1 = "Hypoxia", group.by = "group", logfc.threshold = 0.25, max.cells.per.ident = 2296, random.seed = 123)) # calculate hypoxia DE per cluster on fixed cluster size, i.e. cluster size set equal to CA3 cluster size
 names(DE_per_cluster)<-levels(cam) # name list
 
@@ -175,7 +175,7 @@ venn.diagram(x = DE_per_cluster_names, fill=my_color_palette, col=my_color_palet
 ## right panel
 
 Calculate percentage of hypoxia-upregulated genes per cluster
-```{r percent_upreg}
+```{r percent_upreg, results='hide'}
 # Perform DE calculation without downsampling of clusters
 DE_per_cluster_nosamp<-lapply(levels(cam), function(x) FindMarkers(cam, subset.ident = x,ident.1 = "Hypoxia", group.by = "group",logfc.threshold = 0.25))
 
